@@ -312,6 +312,90 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json({"error":"Neizdevās iegūt Latvijas dziļumu slāņu paraugus","detail":str(e)},502)
 
+
+        if u.path == "/api/vraa-depth-compact":
+            try:
+                import xml.etree.ElementTree as ET
+                layers = [
+                    "vraa:msp_dziluma_apgabali",
+                    "vraa:msp_dzilumatizmes",
+                    "vraa:zm_dzilrakumi_103"
+                ]
+                bbox = "21.30,56.95,21.48,57.08,EPSG:4326"
+                out = []
+
+                for layer in layers:
+                    item = {"layer": layer}
+
+                    # Field names/types from DescribeFeatureType.
+                    try:
+                        desc_url = "https://geolatvija.lv/geoserver/vraa/wfs?" + urlencode({
+                            "service":"WFS",
+                            "version":"2.0.0",
+                            "request":"DescribeFeatureType",
+                            "typeNames":layer
+                        })
+                        req = Request(desc_url, headers={"User-Agent":"Mozilla/5.0"})
+                        with urlopen(req, timeout=30) as r:
+                            raw = r.read()
+                        root = ET.fromstring(raw)
+                        fields = []
+                        for el in root.iter():
+                            if el.tag.endswith("element") and el.attrib.get("name"):
+                                fields.append({
+                                    "name": el.attrib.get("name"),
+                                    "type": el.attrib.get("type"),
+                                    "nillable": el.attrib.get("nillable")
+                                })
+                        item["fields"] = fields
+                    except Exception as e:
+                        item["describe_error"] = str(e)
+
+                    # Small sample. Strip geometry down to type + first coordinate.
+                    try:
+                        feat_url = "https://geolatvija.lv/geoserver/vraa/wfs?" + urlencode({
+                            "service":"WFS",
+                            "version":"2.0.0",
+                            "request":"GetFeature",
+                            "typeNames":layer,
+                            "bbox":bbox,
+                            "count":"5",
+                            "outputFormat":"application/json",
+                            "srsName":"EPSG:4326"
+                        })
+                        req = Request(feat_url, headers={"User-Agent":"Mozilla/5.0"})
+                        with urlopen(req, timeout=30) as r:
+                            data = json.loads(r.read().decode("utf-8"))
+                        compact = []
+                        for ft in data.get("features", [])[:5]:
+                            geom = ft.get("geometry") or {}
+                            coords = geom.get("coordinates")
+                            sample_coord = None
+                            cur = coords
+                            try:
+                                while isinstance(cur, list) and cur and isinstance(cur[0], list):
+                                    cur = cur[0]
+                                if isinstance(cur, list) and len(cur) >= 2:
+                                    sample_coord = cur[:2]
+                            except Exception:
+                                pass
+                            compact.append({
+                                "id": ft.get("id"),
+                                "properties": ft.get("properties", {}),
+                                "geometry_type": geom.get("type"),
+                                "sample_coord": sample_coord
+                            })
+                        item["numberReturned"] = data.get("numberReturned")
+                        item["samples"] = compact
+                    except Exception as e:
+                        item["feature_error"] = str(e)
+
+                    out.append(item)
+
+                return self.send_json({"bbox":bbox,"layers":out})
+            except Exception as e:
+                return self.send_json({"error":"Neizdevās iegūt kompaktos dziļumu slāņu datus","detail":str(e)},502)
+
         if u.path == "/api/weather":
             q = parse_qs(u.query)
             key = q.get("place", ["Jurkalne"])[0]
