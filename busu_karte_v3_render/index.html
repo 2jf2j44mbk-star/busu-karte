@@ -35,7 +35,7 @@ select,button{width:100%;border:0;border-radius:13px;padding:13px;font-size:15px
 <svg id="chart" viewBox="0 0 480 240" preserveAspectRatio="none"></svg>
 <div class="legend"><span>0 m</span><span>50</span><span>100</span><span>150</span><span>200 m</span></div>
 <p class="muted">“0 m” šajā testa grafikā sākas aptuveni 40 m no krasta jūrā, lai nepaņemtu stāvkrasta sauszemes šūnu. Punkti tiek prasīti ik pēc 25 m.</p>
-<div id="samples"></div>
+<div id="samples"></div><div class="card"><div class="title">LATVIJAS DZIĻUMA JOSLAS</div><div id="lvzones" class="muted">Nav ielādēts.</div></div>
 </div>
 </main>
 <script>
@@ -43,14 +43,23 @@ function num(v,u){return v==null?"nav datu":Number(v).toFixed(1)+" "+u}
 async function loadAll(){
  const key=place.value; status.className="status muted"; status.textContent="Ielādēju…";
  try{
-   const [wr,dr]=await Promise.all([fetch("/api/weather?place="+key),fetch("/api/depth?place="+key)]);
-   const w=await wr.json(),d=await dr.json();
+   const [wr,dr,lr]=await Promise.all([fetch("/api/weather?place="+key),fetch("/api/depth?place="+key),fetch("/api/lv-depth-zones?place="+key)]);
+   const w=await wr.json(),d=await dr.json(),l=await lr.json();
    if(!wr.ok) throw new Error(w.error||"Prognožu kļūda");
    if(!dr.ok) throw new Error(d.error||"Dziļumu kļūda");
    const wc=w.weather.current||{},mc=w.marine.current||{};
    wind.textContent=num(wc.wind_speed_10m,"m/s"); wave.textContent=num(mc.wave_height,"m");
    period.textContent=num(mc.wave_period,"s"); sst.textContent=num(mc.sea_surface_temperature,"°C");
    draw(d.profile); showSamples(d.profile);
+   const z=document.getElementById("lvzones");
+   if(lr.ok){
+     z.innerHTML=l.samples.map(s=>{
+       const txt=s.zones&&s.zones.length?s.zones.map(a=>(a.from??"?")+"–"+(a.to??"?")+" m").join(", "):"nav joslas";
+       return '<div class="profile-row"><span>'+s.distance_m+' m grafikā<br><small style="color:#9db2bd">~'+s.approx_from_coast_m+' m no krasta</small></span><b>'+txt+'</b></div>';
+     }).join("");
+   }else{
+     z.textContent="Latvijas WFS dati nav pieejami";
+   }
    status.className="status ok"; status.textContent="✓ Open‑Meteo + EMODnet punkti ielādēti";
  }catch(e){status.className="status warn"; status.textContent="⚠ "+e.message}
 }
