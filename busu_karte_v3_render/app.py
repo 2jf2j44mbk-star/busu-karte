@@ -70,7 +70,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json({"error":"Neizdevās ielādēt sākumlapu","detail":str(e)},500)
 
         if u.path == "/health":
-            return self.send_json({"ok": True, "version":"3.1"})
+            return self.send_json({"ok": True, "version":"3.2"})
 
 
         if u.path == "/api/dzilumi-resource":
@@ -1173,7 +1173,11 @@ class Handler(SimpleHTTPRequestHandler):
         if u.path == "/api/lja-wms-depth-scan":
             try:
                 import math, re
-                p = PLACES["Jurkalne"]
+                q = parse_qs(u.query)
+                key = q.get("place", ["Jurkalne"])[0]
+                p = PLACES.get(key)
+                if not p:
+                    return self.send_json({"error":"Nezināma vieta"},404)
                 R=6378137.0
 
                 def merc(lon,lat):
@@ -1414,11 +1418,29 @@ class Handler(SimpleHTTPRequestHandler):
                         "depth_ranges_m":rows[-1].get("depth_ranges_m",[])
                     })
 
+                enc_start = None
+                for s in segments:
+                    if s.get("depth_ranges_m"):
+                        enc_start = s["from_m"]
+                        break
+
+                coast_segments=[]
+                for s in segments:
+                    if not s.get("depth_ranges_m"):
+                        continue
+                    coast_segments.append({
+                        "from_enc_coast_m": None if enc_start is None else s["from_m"]-enc_start,
+                        "to_enc_coast_m": None if enc_start is None else s["to_m"]-enc_start,
+                        "depth_ranges_m": s["depth_ranges_m"]
+                    })
+
                 return self.send_json({
-                    "place":"Jūrkalne",
+                    "place":p["label"],
                     "scan":"0–5000 m west, step 50 m",
                     "bbox_3857":bbox,
+                    "enc_coast_offset_m":enc_start,
                     "segments":segments,
+                    "coast_segments":coast_segments,
                     "rows":rows
                 })
             except Exception as e:
