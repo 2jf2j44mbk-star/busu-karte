@@ -1266,6 +1266,71 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json({"error":"LJA WMS dziļuma skenēšana neizdevās","detail":str(e)},502)
 
+
+        if u.path == "/api/lja-wms-shore-scan":
+            try:
+                import math
+                p = PLACES["Jurkalne"]
+                R=6378137.0
+
+                def merc(lon,lat):
+                    x=R*math.radians(lon)
+                    y=R*math.log(math.tan(math.pi/4+math.radians(lat)/2))
+                    return x,y
+
+                cx,cy=merc(p["coast_lon"],p["coast_lat"])
+                half=4000.0
+                width=1600
+                height=800
+                bbox=f"{cx-half},{cy-half/2},{cx+half},{cy+half/2}"
+                base="https://notice.lja.lv/wms_proxy.php"
+
+                rows=[]
+                for dist in range(0,3001,100):
+                    px = int(round(width/2 - dist/(2*half)*width))
+                    py = height//2
+                    params={
+                        "service":"WMS","version":"1.1.1","request":"GetFeatureInfo",
+                        "layers":"cells","query_layers":"cells","styles":"style-id-263",
+                        "srs":"EPSG:3857","bbox":bbox,
+                        "width":str(width),"height":str(height),
+                        "format":"image/png","transparent":"true",
+                        "info_format":"text/plain","x":str(px),"y":str(py),
+                        "feature_count":"50"
+                    }
+                    url=base+"?"+urlencode(params)
+                    try:
+                        req=Request(url,headers={"User-Agent":"Mozilla/5.0"})
+                        with urlopen(req,timeout=20) as r:
+                            txt=r.read().decode("utf-8",errors="ignore")
+                        low=txt.lower()
+                        flags={
+                            "land": "land area" in low,
+                            "soundg": ("soundg" in low or "sounding" in low),
+                            "depth": any(k in low for k in ["depare","depcnt","valsou","drval1","drval2","depth"])
+                        }
+                        # Keep a compact classification plus snippets when the class changes or depth appears.
+                        preview=""
+                        if flags["soundg"] or flags["depth"] or dist % 500 == 0:
+                            preview=txt[:1800]
+                        rows.append({
+                            "distance_west_m":dist,
+                            "pixel":[px,py],
+                            "flags":flags,
+                            "preview":preview
+                        })
+                    except Exception as e:
+                        rows.append({"distance_west_m":dist,"error":str(e)})
+
+                return self.send_json({
+                    "place":"Jūrkalne",
+                    "scan":"0–3000 m west, step 100 m",
+                    "bbox_3857":bbox,
+                    "rows":rows
+                })
+            except Exception as e:
+                return self.send_json({"error":"PRIMAR krasta skenēšana neizdevās","detail":str(e)},502)
+
         if u.path == "/api/weather":
             q = parse_qs(u.query)
             key = q.get("place", ["Jurkalne"])[0]
