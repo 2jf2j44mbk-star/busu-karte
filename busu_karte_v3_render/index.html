@@ -71,4 +71,5 @@ function showSamples(p){
  samples.innerHTML="";
  p.forEach(x=>{const r=document.createElement("div");r.className="profile-row";r.innerHTML=`<span>${x.distance_m} m grafikā<br><small style="color:#9db2bd">~${x.approx_from_coast_m} m no krasta</small></span><b>${x.depth_m==null?"—":Number(x.depth_m).toFixed(1)+" m"}</b>`;samples.appendChild(r)})
 }
-</script></body></html>
+</script><!-- render-redeploy-trigger-v3.1 -->
+</body></html>
