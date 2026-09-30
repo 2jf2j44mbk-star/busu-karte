@@ -110,6 +110,37 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json({"error":"Neizdevās izpētīt ĢEO Latvija lapu","detail":str(e)},502)
 
+
+        if u.path == "/api/geolatvija-runtime":
+            try:
+                import re
+                urls = [
+                    "https://geolatvija.lv/runtime-config.js",
+                    "https://geolatvija.lv/static/js/main.db9060ea.js"
+                ]
+                out = {}
+                for target in urls:
+                    req = Request(target, headers={"User-Agent":"Mozilla/5.0"})
+                    with urlopen(req, timeout=20) as r:
+                        txt = r.read().decode("utf-8", errors="ignore")
+                    candidates = []
+                    for pat in [
+                        r'https?://[^"\\\'\\s)]+',
+                        r'["\\\']([^"\\\']*(?:api|service|wfs|ows|geoProduct|metadata)[^"\\\']*)["\\\']'
+                    ]:
+                        for m in re.findall(pat, txt, re.I):
+                            val = m if isinstance(m, str) else m[0]
+                            if val and val not in candidates:
+                                candidates.append(val)
+                    out[target] = {
+                        "length": len(txt),
+                        "preview": txt[:4000],
+                        "candidates": candidates[:200]
+                    }
+                return self.send_json(out)
+            except Exception as e:
+                return self.send_json({"error":"Neizdevās nolasīt GeoLatvija runtime konfigurāciju","detail":str(e)},502)
+
         if u.path == "/api/weather":
             q = parse_qs(u.query)
             key = q.get("place", ["Jurkalne"])[0]
