@@ -986,6 +986,50 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json({"error":"Neizdevās izpētīt notice.lja.lv","detail":str(e)},502)
 
+
+        if u.path == "/api/lja-primar-wms":
+            try:
+                import re
+                target = "https://notice.lja.lv/js/app.js?v=1790759397"
+                req = Request(target, headers={"User-Agent":"Mozilla/5.0"})
+                with urlopen(req, timeout=30) as r:
+                    js = r.read().decode("utf-8", errors="ignore")
+
+                terms = [
+                    "toggleS57Layer","toggleS100Layer","toggleENCLayer",
+                    "PRIMAR","wms","tileLayer.wms","L.tileLayer.wms",
+                    "layers:","GetMap","GetCapabilities"
+                ]
+                snippets={}
+                for term in terms:
+                    low=js.lower()
+                    t=term.lower()
+                    arr=[]
+                    start=0
+                    while True:
+                        i=low.find(t,start)
+                        if i<0: break
+                        arr.append(js[max(0,i-500):min(len(js),i+1500)])
+                        start=i+len(t)
+                        if len(arr)>=20: break
+                    if arr:
+                        snippets[term]=arr
+
+                urls=[]
+                for m in re.findall(r'https?://[^"\\\'\\s)]+', js):
+                    ml=m.lower()
+                    if any(k in ml for k in ["wms","primar","enc","s57","s100","map"]):
+                        if m not in urls:
+                            urls.append(m)
+
+                return self.send_json({
+                    "script":target,
+                    "urls":urls[:100],
+                    "snippets":snippets
+                })
+            except Exception as e:
+                return self.send_json({"error":"Neizdevās izvilkt PRIMAR WMS konfigurāciju","detail":str(e)},502)
+
         if u.path == "/api/weather":
             q = parse_qs(u.query)
             key = q.get("place", ["Jurkalne"])[0]
