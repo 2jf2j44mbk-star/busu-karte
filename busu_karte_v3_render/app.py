@@ -141,6 +141,51 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json({"error":"Neizdevās nolasīt GeoLatvija runtime konfigurāciju","detail":str(e)},502)
 
+
+        if u.path == "/api/geolatvija-wfs":
+            try:
+                import re
+                import xml.etree.ElementTree as ET
+                candidates = [
+                    "https://geolatvija.lv/geoserver/ows?service=WFS&request=GetCapabilities",
+                    "https://geolatvija.lv/geoserver/wfs?service=WFS&request=GetCapabilities"
+                ]
+                results = []
+                for target in candidates:
+                    try:
+                        req = Request(target, headers={"User-Agent":"Mozilla/5.0"})
+                        with urlopen(req, timeout=30) as r:
+                            raw = r.read()
+                            ctype = r.headers.get("Content-Type")
+                        textxml = raw.decode("utf-8", errors="ignore")
+                        layers = []
+                        try:
+                            root = ET.fromstring(raw)
+                            for ft in root.iter():
+                                if ft.tag.endswith("FeatureType"):
+                                    name = title = abstract = None
+                                    for ch in list(ft):
+                                        if ch.tag.endswith("Name"): name = (ch.text or "").strip()
+                                        elif ch.tag.endswith("Title"): title = (ch.text or "").strip()
+                                        elif ch.tag.endswith("Abstract"): abstract = (ch.text or "").strip()
+                                    blob = " ".join([x for x in [name,title,abstract] if x]).lower()
+                                    if any(k in blob for k in ["dziļ","dzil","depth","bathym","batim","jūra","jura"]):
+                                        layers.append({"name":name,"title":title,"abstract":abstract})
+                        except Exception:
+                            pass
+                        results.append({
+                            "url": target,
+                            "content_type": ctype,
+                            "length": len(raw),
+                            "preview": textxml[:1000],
+                            "matching_layers": layers[:100]
+                        })
+                    except Exception as e:
+                        results.append({"url":target,"error":str(e)})
+                return self.send_json({"results":results})
+            except Exception as e:
+                return self.send_json({"error":"Neizdevās pārbaudīt GeoLatvija WFS","detail":str(e)},502)
+
         if u.path == "/api/weather":
             q = parse_qs(u.query)
             key = q.get("place", ["Jurkalne"])[0]
