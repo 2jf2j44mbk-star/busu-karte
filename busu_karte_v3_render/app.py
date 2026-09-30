@@ -879,6 +879,34 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json({"error":"Neizdevās atrast Jūrkalnei tuvākās LJA dziļumatzīmes","detail":str(e)},502)
 
+
+        if u.path == "/api/lja-soundings-files":
+            try:
+                import io, zipfile
+                zip_url = "https://data.gov.lv/dati/lv/dataset/ecf2e9f0-01a5-43e1-a143-0a7d6d7a6ab5/resource/c3686a42-9b9c-41f1-8288-dbaed9e28190/download/ajd_2026.zip"
+                req = Request(zip_url, headers={"User-Agent":"Mozilla/5.0"})
+                with urlopen(req, timeout=60) as r:
+                    raw = r.read()
+
+                zf = zipfile.ZipFile(io.BytesIO(raw))
+                names = zf.namelist()
+
+                sound_files = [n for n in names if "soundg" in n.lower()]
+                depth_files = [n for n in names if any(k in n.lower() for k in [
+                    "soundg","depth","depare","depcnt","drgare","dregare","m_srel","isolin","contour"
+                ])]
+
+                shp_only = [n for n in sound_files if n.lower().endswith(".shp")]
+
+                return self.send_json({
+                    "zip_file_count": len(names),
+                    "soundg_files": sound_files,
+                    "soundg_shp_files": shp_only,
+                    "other_depth_related_files": depth_files
+                })
+            except Exception as e:
+                return self.send_json({"error":"Neizdevās uzskaitīt LJA dziļuma failus","detail":str(e)},502)
+
         if u.path == "/api/weather":
             q = parse_qs(u.query)
             key = q.get("place", ["Jurkalne"])[0]
