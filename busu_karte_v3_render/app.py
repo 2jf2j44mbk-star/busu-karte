@@ -907,6 +907,85 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json({"error":"Neizdevās uzskaitīt LJA dziļuma failus","detail":str(e)},502)
 
+
+        if u.path == "/api/lja-notice-probe":
+            try:
+                import re
+                base = "https://notice.lja.lv/"
+                req = Request(base, headers={"User-Agent":"Mozilla/5.0"})
+                with urlopen(req, timeout=30) as r:
+                    html = r.read().decode("utf-8", errors="ignore")
+
+                scripts = re.findall(r'<script[^>]+src=["\\\']([^"\\\']+)["\\\']', html, re.I)
+                links = re.findall(r'<link[^>]+href=["\\\']([^"\\\']+)["\\\']', html, re.I)
+
+                def absurl(s):
+                    if s.startswith("http"):
+                        return s
+                    if s.startswith("//"):
+                        return "https:" + s
+                    return base.rstrip("/") + "/" + s.lstrip("/")
+
+                script_urls = [absurl(s) for s in scripts]
+                candidates = []
+                snippets = {}
+
+                terms = ["primar","enc","s-57","s57","s-100","s100","wms","wmts","tile","tiles","leaflet","maplibre","arcgis","geoserver"]
+
+                # Also inspect inline HTML.
+                lowhtml = html.lower()
+                for term in terms:
+                    if term in lowhtml:
+                        idx = lowhtml.find(term)
+                        snippets.setdefault("html", []).append(html[max(0,idx-300):idx+700])
+
+                for su in script_urls[:25]:
+                    try:
+                        req2 = Request(su, headers={"User-Agent":"Mozilla/5.0"})
+                        with urlopen(req2, timeout=30) as r2:
+                            js = r2.read().decode("utf-8", errors="ignore")
+
+                        # URLs
+                        for m in re.findall(r'https?://[^"\\\'\\s)]+', js):
+                            ml = m.lower()
+                            if any(t in ml for t in terms):
+                                if m not in candidates:
+                                    candidates.append(m)
+
+                        # Relative API/tile/service paths.
+                        for m in re.findall(r'["\\\'](/[^"\\\']{2,220})["\\\']', js):
+                            ml = m.lower()
+                            if any(t in ml for t in terms):
+                                au = absurl(m)
+                                if au not in candidates:
+                                    candidates.append(au)
+
+                        # Context around key terms.
+                        low = js.lower()
+                        for term in terms:
+                            start=0
+                            found=[]
+                            while True:
+                                i=low.find(term,start)
+                                if i<0: break
+                                found.append(js[max(0,i-250):min(len(js),i+650)])
+                                start=i+len(term)
+                                if len(found)>=8: break
+                            if found:
+                                snippets[su+"::"+term]=found
+                    except Exception as e:
+                        snippets[su+"::error"]=[str(e)]
+
+                return self.send_json({
+                    "page": base,
+                    "scripts": script_urls,
+                    "links": [absurl(x) for x in links],
+                    "candidates": candidates[:300],
+                    "snippets": snippets
+                })
+            except Exception as e:
+                return self.send_json({"error":"Neizdevās izpētīt notice.lja.lv","detail":str(e)},502)
+
         if u.path == "/api/weather":
             q = parse_qs(u.query)
             key = q.get("place", ["Jurkalne"])[0]
