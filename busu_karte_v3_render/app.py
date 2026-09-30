@@ -497,6 +497,58 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json({"error":"CRS/BBOX tests neizdevās","detail":str(e)},502)
 
+
+        if u.path == "/api/vraa-depth-3059":
+            try:
+                layers = [
+                    "vraa:msp_dziluma_apgabali",
+                    "vraa:msp_dzilumatizmes",
+                    "vraa:zm_dzilrakumi_103"
+                ]
+
+                # Jūrkalnes apkārtne, pārrēķināta no WGS84 uz EPSG:3059.
+                bbox_3059 = "335785.44,315064.29,347264.13,329111.44,EPSG:3059"
+                out = []
+
+                for layer in layers:
+                    item = {"layer":layer}
+                    for ver in ["2.0.0","1.1.0"]:
+                        try:
+                            params = {
+                                "service":"WFS",
+                                "version":ver,
+                                "request":"GetFeature",
+                                ("typeNames" if ver.startswith("2") else "typeName"):layer,
+                                "bbox":bbox_3059,
+                                ("count" if ver.startswith("2") else "maxFeatures"):"10",
+                                "outputFormat":"application/json",
+                                "srsName":"EPSG:3059"
+                            }
+                            url = "https://geolatvija.lv/geoserver/vraa/wfs?" + urlencode(params)
+                            req = Request(url, headers={"User-Agent":"Mozilla/5.0"})
+                            with urlopen(req, timeout=30) as r:
+                                data = json.loads(r.read().decode("utf-8"))
+
+                            compact=[]
+                            for ft in data.get("features",[])[:10]:
+                                compact.append({
+                                    "id":ft.get("id"),
+                                    "properties":ft.get("properties",{}),
+                                    "geometry_type":(ft.get("geometry") or {}).get("type")
+                                })
+
+                            item["wfs_"+ver] = {
+                                "numberReturned":data.get("numberReturned"),
+                                "samples":compact
+                            }
+                        except Exception as e:
+                            item["wfs_"+ver] = {"error":str(e)}
+                    out.append(item)
+
+                return self.send_json({"bbox_3059":bbox_3059,"layers":out})
+            except Exception as e:
+                return self.send_json({"error":"EPSG:3059 dziļumu tests neizdevās","detail":str(e)},502)
+
         if u.path == "/api/weather":
             q = parse_qs(u.query)
             key = q.get("place", ["Jurkalne"])[0]
