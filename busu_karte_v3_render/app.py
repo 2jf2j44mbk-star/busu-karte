@@ -990,7 +990,27 @@ class Handler(SimpleHTTPRequestHandler):
         if u.path == "/api/lja-primar-wms":
             try:
                 import re
-                target = "https://notice.lja.lv/js/app.js?v=1790759397"
+                base = "https://notice.lja.lv/"
+                req0 = Request(base, headers={"User-Agent":"Mozilla/5.0"})
+                with urlopen(req0, timeout=30) as r0:
+                    html = r0.read().decode("utf-8", errors="ignore")
+
+                scripts = re.findall(r'<script[^>]+src=["\\\']([^"\\\']+)["\\\']', html, re.I)
+                app_src = None
+                for s in scripts:
+                    if "app.js" in s:
+                        app_src = s
+                        break
+                if not app_src:
+                    return self.send_json({"error":"Aktuālais app.js nav atrasts","scripts":scripts},404)
+
+                if app_src.startswith("http"):
+                    target = app_src
+                elif app_src.startswith("//"):
+                    target = "https:" + app_src
+                else:
+                    target = base.rstrip("/") + "/" + app_src.lstrip("/")
+
                 req = Request(target, headers={"User-Agent":"Mozilla/5.0"})
                 with urlopen(req, timeout=30) as r:
                     js = r.read().decode("utf-8", errors="ignore")
@@ -1001,16 +1021,16 @@ class Handler(SimpleHTTPRequestHandler):
                     "layers:","GetMap","GetCapabilities"
                 ]
                 snippets={}
+                low=js.lower()
                 for term in terms:
-                    low=js.lower()
                     t=term.lower()
                     arr=[]
-                    start=0
+                    startpos=0
                     while True:
-                        i=low.find(t,start)
+                        i=low.find(t,startpos)
                         if i<0: break
-                        arr.append(js[max(0,i-500):min(len(js),i+1500)])
-                        start=i+len(t)
+                        arr.append(js[max(0,i-500):min(len(js),i+1800)])
+                        startpos=i+len(t)
                         if len(arr)>=20: break
                     if arr:
                         snippets[term]=arr
@@ -1024,6 +1044,7 @@ class Handler(SimpleHTTPRequestHandler):
 
                 return self.send_json({
                     "script":target,
+                    "script_length":len(js),
                     "urls":urls[:100],
                     "snippets":snippets
                 })
