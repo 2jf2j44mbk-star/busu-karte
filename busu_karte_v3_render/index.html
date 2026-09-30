@@ -2,7 +2,7 @@
 <html lang="lv">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Bušu Karte V3.1</title>
+<title>Bušu Karte V3.2</title>
 <style>
 :root{--card:#0e202b;--card2:#142d39;--txt:#eef8fb;--mut:#9db2bd;--green:#2bd0aa;--blue:#42aaff;--gold:#f3bc54;--line:#28434f}
 *{box-sizing:border-box}body{margin:0;background:linear-gradient(#051018,#0a1c25);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial;color:var(--txt)}
@@ -15,7 +15,7 @@ select,button{width:100%;border:0;border-radius:13px;padding:13px;font-size:15px
 </style>
 </head>
 <body><main>
-<div class="top"><div class="brand">🎣 BUŠU KARTE</div><div class="tag">V3.1</div></div>
+<div class="top"><div class="brand">🎣 BUŠU KARTE</div><div class="tag">V3.2</div></div>
 <div class="card">
 <div class="title">Testa vieta</div>
 <select id="place"><option value="Jurkalne">Jūrkalne</option><option value="Uzava">Užava</option><option value="Pavilosta">Pāvilosta</option><option value="Ventspils">Ventspils</option></select>
@@ -31,11 +31,11 @@ select,button{width:100%;border:0;border-radius:13px;padding:13px;font-size:15px
 </div>
 
 <div class="card">
-<div class="title">EMODnet · 9 dziļuma punkti · 0–200 m</div>
+<div class="title">EMODnet · salīdzinājumam · 0–200 m</div>
 <svg id="chart" viewBox="0 0 480 240" preserveAspectRatio="none"></svg>
 <div class="legend"><span>0 m</span><span>50</span><span>100</span><span>150</span><span>200 m</span></div>
-<p class="muted">“0 m” šajā testa grafikā sākas aptuveni 40 m no krasta jūrā, lai nepaņemtu stāvkrasta sauszemes šūnu. Punkti tiek prasīti ik pēc 25 m.</p>
-<div id="samples"></div><div class="card"><div class="title">LATVIJAS DZIĻUMA JOSLAS</div><div id="lvzones" class="muted">Nav ielādēts.</div></div>
+<p class="muted">EMODnet te paliek tikai salīdzinājumam. Piekrastes dziļumam priekšroka tiek dota PRIMAR S‑57 dziļuma joslām.</p>
+<div id="samples"></div><div class="card"><div class="title">PRIMAR S‑57 · DZIĻUMA JOSLAS</div><div id="primar" class="muted">Nav ielādēts.</div></div><div class="card"><div class="title">LATVIJAS DZIĻUMA JOSLAS</div><div id="lvzones" class="muted">Nav ielādēts.</div></div>
 </div>
 </main>
 <script>
@@ -43,14 +43,29 @@ function num(v,u){return v==null?"nav datu":Number(v).toFixed(1)+" "+u}
 async function loadAll(){
  const key=place.value; status.className="status muted"; status.textContent="Ielādēju…";
  try{
-   const [wr,dr,lr]=await Promise.all([fetch("/api/weather?place="+key),fetch("/api/depth?place="+key),fetch("/api/lv-depth-zones?place="+key)]);
-   const w=await wr.json(),d=await dr.json(),l=await lr.json();
+   const [wr,dr,lr,pr]=await Promise.all([fetch("/api/weather?place="+key),fetch("/api/depth?place="+key),fetch("/api/lv-depth-zones?place="+key),fetch("/api/lja-wms-depth-ranges?place="+key)]);
+   const w=await wr.json(),d=await dr.json(),l=await lr.json(),p=await pr.json();
    if(!wr.ok) throw new Error(w.error||"Prognožu kļūda");
    if(!dr.ok) throw new Error(d.error||"Dziļumu kļūda");
    const wc=w.weather.current||{},mc=w.marine.current||{};
    wind.textContent=num(wc.wind_speed_10m,"m/s"); wave.textContent=num(mc.wave_height,"m");
    period.textContent=num(mc.wave_period,"s"); sst.textContent=num(mc.sea_surface_temperature,"°C");
    draw(d.profile); showSamples(d.profile);
+
+   const pe=document.getElementById("primar");
+   if(pr.ok && p.coast_segments){
+     const head=p.enc_coast_offset_m==null
+       ? '<div class="status warn">ENC krasta sākums nav atrasts.</div>'
+       : '<div class="status ok">✓ ENC krasta sākums noteikts aptuveni '+p.enc_coast_offset_m+' m uz rietumiem no sākotnējā atskaites punkta.</div>';
+     pe.innerHTML=head+p.coast_segments.map(s=>{
+       const a=s.from_enc_coast_m, b=s.to_enc_coast_m;
+       const ranges=(s.depth_ranges_m||[]).map(r=>(r[0]??"?")+"–"+(r[1]??"?")+" m").join(", ");
+       return '<div class="profile-row"><span>'+a+'–'+b+' m no ENC krasta</span><b>'+ranges+'</b></div>';
+     }).join("")+'<p class="muted">PRIMAR S‑57 rāda dziļuma zonas, nevis precīzu dziļumu katrā metrā.</p>';
+   }else{
+     pe.textContent="PRIMAR dziļuma zonas nav pieejamas.";
+   }
+
    const z=document.getElementById("lvzones");
    if(lr.ok){
      z.innerHTML=l.samples.map(s=>{
@@ -60,7 +75,7 @@ async function loadAll(){
    }else{
      z.textContent="Latvijas WFS dati nav pieejami";
    }
-   status.className="status ok"; status.textContent="✓ Open‑Meteo + EMODnet punkti ielādēti";
+   status.className="status ok"; status.textContent="✓ Open‑Meteo + PRIMAR S‑57 + EMODnet ielādēti";
  }catch(e){status.className="status warn"; status.textContent="⚠ "+e.message}
 }
 function draw(p){
