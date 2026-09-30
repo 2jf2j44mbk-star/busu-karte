@@ -396,6 +396,107 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json({"error":"Neizdevās iegūt kompaktos dziļumu slāņu datus","detail":str(e)},502)
 
+
+        if u.path == "/api/vraa-depth-crs-test":
+            try:
+                import xml.etree.ElementTree as ET
+
+                caps_url = "https://geolatvija.lv/geoserver/vraa/wfs?service=WFS&request=GetCapabilities&version=2.0.0"
+                req = Request(caps_url, headers={"User-Agent":"Mozilla/5.0"})
+                with urlopen(req, timeout=30) as r:
+                    raw = r.read()
+                root = ET.fromstring(raw)
+
+                wanted = {
+                    "vraa:msp_dziluma_apgabali",
+                    "vraa:msp_dzilumatizmes",
+                    "vraa:zm_dzilrakumi_103"
+                }
+
+                meta = {}
+                for ft in root.iter():
+                    if ft.tag.endswith("FeatureType"):
+                        vals = {}
+                        for ch in list(ft):
+                            tag = ch.tag.split("}")[-1]
+                            txt = (ch.text or "").strip()
+                            if tag in ["Name","Title","DefaultCRS","DefaultSRS","OtherCRS","OtherSRS"]:
+                                vals.setdefault(tag, []).append(txt)
+                            if tag in ["WGS84BoundingBox","LatLongBoundingBox"]:
+                                vals.setdefault(tag, []).append(ET.tostring(ch, encoding="unicode"))
+                        names = vals.get("Name", [])
+                        if names and names[0] in wanted:
+                            meta[names[0]] = vals
+
+                tests = []
+                layer = "vraa:msp_dziluma_apgabali"
+                # Test bbox with explicit CRS84 and EPSG:4326 axis variants.
+                requests_to_try = [
+                    ("wfs2_crs84", "2.0.0", "21.30,56.95,21.48,57.08,urn:ogc:def:crs:OGC:1.3:CRS84"),
+                    ("wfs2_epsg4326_lonlat", "2.0.0", "21.30,56.95,21.48,57.08,EPSG:4326"),
+                    ("wfs2_epsg4326_latlon", "2.0.0", "56.95,21.30,57.08,21.48,EPSG:4326"),
+                    ("wfs11_epsg4326", "1.1.0", "21.30,56.95,21.48,57.08,EPSG:4326")
+                ]
+                for label, ver, bbox in requests_to_try:
+                    try:
+                        params = {
+                            "service":"WFS","version":ver,"request":"GetFeature",
+                            ("typeNames" if ver.startswith("2") else "typeName"):layer,
+                            "bbox":bbox,
+                            ("count" if ver.startswith("2") else "maxFeatures"):"3",
+                            "outputFormat":"application/json"
+                        }
+                        url = "https://geolatvija.lv/geoserver/vraa/wfs?" + urlencode(params)
+                        req = Request(url, headers={"User-Agent":"Mozilla/5.0"})
+                        with urlopen(req, timeout=30) as r:
+                            data = json.loads(r.read().decode("utf-8"))
+                        compact=[]
+                        for ft in data.get("features", [])[:3]:
+                            geom=ft.get("geometry") or {}
+                            coords=geom.get("coordinates")
+                            cur=coords
+                            try:
+                                while isinstance(cur,list) and cur and isinstance(cur[0],list):
+                                    cur=cur[0]
+                            except Exception:
+                                pass
+                            compact.append({
+                                "id":ft.get("id"),
+                                "props":ft.get("properties",{}),
+                                "geom_type":geom.get("type"),
+                                "sample_coord":cur[:2] if isinstance(cur,list) and len(cur)>=2 else None
+                            })
+                        tests.append({"label":label,"url":url,"numberReturned":data.get("numberReturned"),"features":compact})
+                    except Exception as e:
+                        tests.append({"label":label,"error":str(e)})
+
+                # Try depth-soundings layer on both WFS versions without bbox first.
+                sounding_tests=[]
+                for lname in ["vraa:msp_dzilumatizmes","vraa:zm_dzilrakumi_103"]:
+                    for ver in ["2.0.0","1.1.0"]:
+                        try:
+                            params={
+                                "service":"WFS","version":ver,"request":"GetFeature",
+                                ("typeNames" if ver.startswith("2") else "typeName"):lname,
+                                ("count" if ver.startswith("2") else "maxFeatures"):"3",
+                                "outputFormat":"application/json"
+                            }
+                            url="https://geolatvija.lv/geoserver/vraa/wfs?"+urlencode(params)
+                            req=Request(url,headers={"User-Agent":"Mozilla/5.0"})
+                            with urlopen(req,timeout=30) as r:
+                                txt=r.read().decode("utf-8",errors="ignore")
+                            data=json.loads(txt)
+                            compact=[]
+                            for ft in data.get("features",[])[:3]:
+                                compact.append({"id":ft.get("id"),"properties":ft.get("properties",{}),"geometry":ft.get("geometry")})
+                            sounding_tests.append({"layer":lname,"version":ver,"numberReturned":data.get("numberReturned"),"features":compact})
+                        except Exception as e:
+                            sounding_tests.append({"layer":lname,"version":ver,"error":str(e)})
+
+                return self.send_json({"metadata":meta,"bbox_tests":tests,"sounding_tests":sounding_tests})
+            except Exception as e:
+                return self.send_json({"error":"CRS/BBOX tests neizdevās","detail":str(e)},502)
+
         if u.path == "/api/weather":
             q = parse_qs(u.query)
             key = q.get("place", ["Jurkalne"])[0]
