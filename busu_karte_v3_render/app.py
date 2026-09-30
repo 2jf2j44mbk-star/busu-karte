@@ -549,6 +549,57 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json({"error":"EPSG:3059 dziļumu tests neizdevās","detail":str(e)},502)
 
+
+        if u.path == "/api/lv-depth-zones":
+            q = parse_qs(u.query)
+            key = q.get("place", ["Jurkalne"])[0]
+            native_points = {
+                "Jurkalne": {"x":340971.9825,"y":321041.2680},
+                "Uzava": {"x":344009.4661,"y":347837.8548},
+                "Pavilosta": {"x":328270.9483,"y":308988.7899},
+                "Ventspils": {"x":351306.2561,"y":363364.6870}
+            }
+            p = native_points.get(key)
+            if not p:
+                return self.send_json({"error":"Nezināma vieta"},404)
+
+            samples=[]
+            for d in range(0,201,25):
+                # testa sākums ~40 m jūrā; šajā īsajā posmā pietiek ar lokālu EPSG:3059 X nobīdi uz rietumiem
+                x = p["x"] - (40 + d)
+                y = p["y"]
+                eps = 2.0
+                bbox = f"{x-eps},{y-eps},{x+eps},{y+eps},EPSG:3059"
+                try:
+                    url = "https://geolatvija.lv/geoserver/vraa/wfs?" + urlencode({
+                        "service":"WFS","version":"2.0.0","request":"GetFeature",
+                        "typeNames":"vraa:msp_dziluma_apgabali",
+                        "bbox":bbox,
+                        "count":"5",
+                        "outputFormat":"application/json",
+                        "srsName":"EPSG:3059"
+                    })
+                    req = Request(url, headers={"User-Agent":"Mozilla/5.0"})
+                    with urlopen(req, timeout=20) as r:
+                        data = json.loads(r.read().decode("utf-8"))
+                    zones=[]
+                    for ft in data.get("features",[]):
+                        pr=ft.get("properties",{})
+                        zones.append({
+                            "from":pr.get("dzilums_no"),
+                            "to":pr.get("dzil1_lidz"),
+                            "id":ft.get("id")
+                        })
+                    samples.append({"distance_m":d,"approx_from_coast_m":40+d,"zones":zones})
+                except Exception as e:
+                    samples.append({"distance_m":d,"approx_from_coast_m":40+d,"zones":[],"error":str(e)})
+
+            return self.send_json({
+                "place":key,
+                "source":"GeoLatvija VRAA WFS vraa:msp_dziluma_apgabali",
+                "samples":samples
+            })
+
         if u.path == "/api/weather":
             q = parse_qs(u.query)
             key = q.get("place", ["Jurkalne"])[0]
