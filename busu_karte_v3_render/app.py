@@ -1331,6 +1331,100 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json({"error":"PRIMAR krasta skenēšana neizdevās","detail":str(e)},502)
 
+
+        if u.path == "/api/lja-wms-depth-ranges":
+            try:
+                import math, re
+                p = PLACES["Jurkalne"]
+                R=6378137.0
+
+                def merc(lon,lat):
+                    x=R*math.radians(lon)
+                    y=R*math.log(math.tan(math.pi/4+math.radians(lat)/2))
+                    return x,y
+
+                cx,cy=merc(p["coast_lon"],p["coast_lat"])
+                half=2500.0
+                width=2000
+                height=800
+                bbox=f"{cx-half},{cy-1000},{cx+half},{cy+1000}"
+                base="https://notice.lja.lv/wms_proxy.php"
+
+                rows=[]
+                for dist in range(0,1501,25):
+                    px = int(round(width/2 - dist/(2*half)*width))
+                    py = height//2
+                    params={
+                        "service":"WMS","version":"1.1.1","request":"GetFeatureInfo",
+                        "layers":"cells","query_layers":"cells","styles":"style-id-263",
+                        "srs":"EPSG:3857","bbox":bbox,
+                        "width":str(width),"height":str(height),
+                        "format":"image/png","transparent":"true",
+                        "info_format":"text/plain","x":str(px),"y":str(py),
+                        "feature_count":"100"
+                    }
+                    url=base+"?"+urlencode(params)
+                    try:
+                        req=Request(url,headers={"User-Agent":"Mozilla/5.0"})
+                        with urlopen(req,timeout=20) as r:
+                            txt=r.read().decode("utf-8",errors="ignore")
+
+                        low=txt.lower()
+                        ranges=[]
+                        # Parse "Depth range value 1: ... m" and value 2.
+                        vals1=[float(x) for x in re.findall(r'Depth range value 1:\s*(-?\d+(?:\.\d+)?)', txt, re.I)]
+                        vals2=[float(x) for x in re.findall(r'Depth range value 2:\s*(-?\d+(?:\.\d+)?)', txt, re.I)]
+                        for i,v1 in enumerate(vals1):
+                            v2=vals2[i] if i < len(vals2) else None
+                            pair=[v1,v2]
+                            if pair not in ranges:
+                                ranges.append(pair)
+
+                        rows.append({
+                            "distance_west_m":dist,
+                            "pixel":[px,py],
+                            "depth_ranges_m":ranges,
+                            "has_soundings":("soundg" in low or "sounding" in low),
+                            "has_land":("land area" in low),
+                            "preview":txt[:1600] if ranges or ("soundg" in low or "sounding" in low) else ""
+                        })
+                    except Exception as e:
+                        rows.append({"distance_west_m":dist,"error":str(e)})
+
+                # Compress consecutive identical depth-range segments.
+                segments=[]
+                last=None
+                seg_start=None
+                for r in rows:
+                    key=str(r.get("depth_ranges_m",[]))
+                    if key != last:
+                        if last is not None:
+                            segments.append({
+                                "from_m":seg_start,
+                                "to_m":prev_dist,
+                                "depth_ranges_m":prev_ranges
+                            })
+                        seg_start=r["distance_west_m"]
+                        last=key
+                    prev_dist=r["distance_west_m"]
+                    prev_ranges=r.get("depth_ranges_m",[])
+                if rows:
+                    segments.append({
+                        "from_m":seg_start,
+                        "to_m":rows[-1]["distance_west_m"],
+                        "depth_ranges_m":rows[-1].get("depth_ranges_m",[])
+                    })
+
+                return self.send_json({
+                    "place":"Jūrkalne",
+                    "scan":"0–1500 m west, step 25 m",
+                    "bbox_3857":bbox,
+                    "segments":segments,
+                    "rows":rows
+                })
+            except Exception as e:
+                return self.send_json({"error":"PRIMAR dziļuma intervālu skenēšana neizdevās","detail":str(e)},502)
+
         if u.path == "/api/weather":
             q = parse_qs(u.query)
             key = q.get("place", ["Jurkalne"])[0]
