@@ -1344,14 +1344,14 @@ class Handler(SimpleHTTPRequestHandler):
                     return x,y
 
                 cx,cy=merc(p["coast_lon"],p["coast_lat"])
-                half=2500.0
-                width=2000
-                height=800
-                bbox=f"{cx-half},{cy-1000},{cx+half},{cy+1000}"
+                half=7000.0
+                width=2800
+                height=1000
+                bbox=f"{cx-half},{cy-1500},{cx+half},{cy+1500}"
                 base="https://notice.lja.lv/wms_proxy.php"
 
                 rows=[]
-                for dist in range(0,1501,25):
+                for dist in range(0,5001,50):
                     px = int(round(width/2 - dist/(2*half)*width))
                     py = height//2
                     params={
@@ -1370,10 +1370,9 @@ class Handler(SimpleHTTPRequestHandler):
                             txt=r.read().decode("utf-8",errors="ignore")
 
                         low=txt.lower()
-                        ranges=[]
-                        # Parse "Depth range value 1: ... m" and value 2.
                         vals1=[float(x) for x in re.findall(r'Depth range value 1:\s*(-?\d+(?:\.\d+)?)', txt, re.I)]
                         vals2=[float(x) for x in re.findall(r'Depth range value 2:\s*(-?\d+(?:\.\d+)?)', txt, re.I)]
+                        ranges=[]
                         for i,v1 in enumerate(vals1):
                             v2=vals2[i] if i < len(vals2) else None
                             pair=[v1,v2]
@@ -1382,32 +1381,32 @@ class Handler(SimpleHTTPRequestHandler):
 
                         rows.append({
                             "distance_west_m":dist,
-                            "pixel":[px,py],
                             "depth_ranges_m":ranges,
                             "has_soundings":("soundg" in low or "sounding" in low),
-                            "has_land":("land area" in low),
-                            "preview":txt[:1600] if ranges or ("soundg" in low or "sounding" in low) else ""
+                            "has_land":("land area" in low)
                         })
                     except Exception as e:
                         rows.append({"distance_west_m":dist,"error":str(e)})
 
-                # Compress consecutive identical depth-range segments.
                 segments=[]
-                last=None
+                last_key=None
                 seg_start=None
+                prev_dist=None
+                prev_ranges=[]
                 for r in rows:
-                    key=str(r.get("depth_ranges_m",[]))
-                    if key != last:
-                        if last is not None:
+                    ranges=r.get("depth_ranges_m",[])
+                    key=str(ranges)
+                    if key != last_key:
+                        if last_key is not None:
                             segments.append({
                                 "from_m":seg_start,
                                 "to_m":prev_dist,
                                 "depth_ranges_m":prev_ranges
                             })
                         seg_start=r["distance_west_m"]
-                        last=key
+                        last_key=key
                     prev_dist=r["distance_west_m"]
-                    prev_ranges=r.get("depth_ranges_m",[])
+                    prev_ranges=ranges
                 if rows:
                     segments.append({
                         "from_m":seg_start,
@@ -1417,7 +1416,7 @@ class Handler(SimpleHTTPRequestHandler):
 
                 return self.send_json({
                     "place":"Jūrkalne",
-                    "scan":"0–1500 m west, step 25 m",
+                    "scan":"0–5000 m west, step 50 m",
                     "bbox_3857":bbox,
                     "segments":segments,
                     "rows":rows
