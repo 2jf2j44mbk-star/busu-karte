@@ -78,6 +78,38 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json({"error":"Neizdevās nolasīt Dziļumi WFS CKAN metadatus","detail":str(e)},502)
 
+
+        if u.path == "/api/geolatvija-probe":
+            try:
+                import re
+                page_url = "https://geolatvija.lv/main?geoProductId=74"
+                req = Request(page_url, headers={"User-Agent":"Mozilla/5.0"})
+                with urlopen(req, timeout=20) as r:
+                    html = r.read().decode("utf-8", errors="ignore")
+                scripts = re.findall(r'<script[^>]+src=["\\\']([^"\\\']+)["\\\']', html, re.I)
+                scripts = [s if s.startswith("http") else "https://geolatvija.lv" + ("" if s.startswith("/") else "/") + s for s in scripts]
+                hits = []
+                for s in scripts[:12]:
+                    try:
+                        req2 = Request(s, headers={"User-Agent":"Mozilla/5.0"})
+                        with urlopen(req2, timeout=20) as r2:
+                            js = r2.read().decode("utf-8", errors="ignore")
+                        for pat in [r'https?://[^"\\\']+(?:wfs|WFS)[^"\\\']*',
+                                    r'https?://[^"\\\']+GetCapabilities[^"\\\']*',
+                                    r'https?://[^"\\\']+ows\\?[^"\\\']*']:
+                            for m in re.findall(pat, js):
+                                if m not in hits:
+                                    hits.append(m)
+                    except Exception:
+                        pass
+                return self.send_json({
+                    "page": page_url,
+                    "scripts": scripts,
+                    "wfs_candidates": hits[:50]
+                })
+            except Exception as e:
+                return self.send_json({"error":"Neizdevās izpētīt ĢEO Latvija lapu","detail":str(e)},502)
+
         if u.path == "/api/weather":
             q = parse_qs(u.query)
             key = q.get("place", ["Jurkalne"])[0]
