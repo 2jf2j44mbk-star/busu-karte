@@ -721,6 +721,86 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json({"error":"Neizdevās nolasīt LJA SHP ZIP","detail":str(e)},502)
 
+
+        if u.path == "/api/lja-soundings-geom":
+            try:
+                import io, zipfile, struct
+
+                zip_url = "https://data.gov.lv/dati/lv/dataset/ecf2e9f0-01a5-43e1-a143-0a7d6d7a6ab5/resource/c3686a42-9b9c-41f1-8288-dbaed9e28190/download/ajd_2026.zip"
+                req = Request(zip_url, headers={"User-Agent":"Mozilla/5.0"})
+                with urlopen(req, timeout=60) as r:
+                    raw = r.read()
+
+                zf = zipfile.ZipFile(io.BytesIO(raw))
+                shp_name = next((n for n in zf.namelist() if n.lower().endswith("soundg(pz).shp")), None)
+                prj_name = next((n for n in zf.namelist() if n.lower().endswith("soundg(pz).prj")), None)
+                if not shp_name:
+                    return self.send_json({"error":"SOUNDG(PZ).shp nav atrasts ZIP failā"},404)
+
+                shp = zf.read(shp_name)
+                prj = zf.read(prj_name).decode("utf-8", errors="ignore") if prj_name else None
+
+                if len(shp) < 100:
+                    return self.send_json({"error":"SHP fails pārāk īss"},502)
+
+                header_shape_type = struct.unpack("<i", shp[32:36])[0]
+                xmin, ymin, xmax, ymax = struct.unpack("<4d", shp[36:68])
+                zmin, zmax = struct.unpack("<2d", shp[68:84])
+
+                records=[]
+                pos=100
+                while pos+8 <= len(shp) and len(records) < 20:
+                    rec_no, content_words = struct.unpack(">2i", shp[pos:pos+8])
+                    content_len = content_words * 2
+                    content = shp[pos+8:pos+8+content_len]
+                    pos += 8 + content_len
+                    if len(content) < 4:
+                        continue
+                    st = struct.unpack("<i", content[:4])[0]
+                    rec={"record":rec_no,"shape_type":st}
+
+                    # PointZ
+                    if st == 11 and len(content) >= 36:
+                        x,y,z,m = struct.unpack("<4d", content[4:36])
+                        rec.update({"x":x,"y":y,"z":z,"m":m})
+
+                    # MultiPointZ
+                    elif st == 18 and len(content) >= 40:
+                        bxmin,bymin,bxmax,bymax = struct.unpack("<4d", content[4:36])
+                        npts = struct.unpack("<i", content[36:40])[0]
+                        off=40
+                        pts=[]
+                        for i in range(min(npts,50)):
+                            if off+16>len(content): break
+                            x,y=struct.unpack("<2d",content[off:off+16])
+                            pts.append([x,y])
+                            off+=16
+                        zvals=[]
+                        if off+16<=len(content):
+                            zrmin,zrmax=struct.unpack("<2d",content[off:off+16]); off+=16
+                            for i in range(min(npts,50)):
+                                if off+8>len(content): break
+                                zvals.append(struct.unpack("<d",content[off:off+8])[0])
+                                off+=8
+                        rec.update({
+                            "num_points":npts,
+                            "bbox":[bxmin,bymin,bxmax,bymax],
+                            "points_xyz":[[pts[i][0],pts[i][1],zvals[i] if i<len(zvals) else None] for i in range(min(len(pts),len(zvals) or len(pts)))]
+                        })
+                    records.append(rec)
+
+                return self.send_json({
+                    "shp_name":shp_name,
+                    "prj_name":prj_name,
+                    "prj":prj,
+                    "header_shape_type":header_shape_type,
+                    "bbox":[xmin,ymin,xmax,ymax],
+                    "z_range":[zmin,zmax],
+                    "records":records
+                })
+            except Exception as e:
+                return self.send_json({"error":"Neizdevās nolasīt LJA SOUNDG ģeometriju","detail":str(e)},502)
+
         if u.path == "/api/weather":
             q = parse_qs(u.query)
             key = q.get("place", ["Jurkalne"])[0]
