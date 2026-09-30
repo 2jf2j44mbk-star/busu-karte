@@ -1169,6 +1169,103 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json({"error":"LJA WMS FeatureInfo tests neizdevās","detail":str(e)},502)
 
+
+        if u.path == "/api/lja-wms-depth-scan":
+            try:
+                import math, re
+                p = PLACES["Jurkalne"]
+                R=6378137.0
+
+                def merc(lon,lat):
+                    x=R*math.radians(lon)
+                    y=R*math.log(math.tan(math.pi/4+math.radians(lat)/2))
+                    return x,y
+
+                cx,cy=merc(p["coast_lon"],p["coast_lat"])
+
+                # 2 km wide/high box centered on coast, 1000x1000 px => ~2 m/px.
+                half=1000.0
+                width=1000
+                height=1000
+                bbox=f"{cx-half},{cy-half},{cx+half},{cy+half}"
+
+                base="https://notice.lja.lv/wms_proxy.php"
+                keywords=[
+                    "soundg","sounding","depth","depare","depcnt",
+                    "valsou","drval1","drval2","quasou","tecsou"
+                ]
+
+                results=[]
+                for style,label in [("style-id-263","S57"),("style-id-3135","S100")]:
+                    hits=[]
+                    raw_samples=[]
+
+                    # Scan transect 40..340 m west of coast every 20 m.
+                    for dist in range(40,341,20):
+                        # west is smaller x
+                        px = int(round(width/2 - dist/(2*half)*width))
+                        py = height//2
+
+                        params={
+                            "service":"WMS",
+                            "version":"1.1.1",
+                            "request":"GetFeatureInfo",
+                            "layers":"cells",
+                            "query_layers":"cells",
+                            "styles":style,
+                            "srs":"EPSG:3857",
+                            "bbox":bbox,
+                            "width":str(width),
+                            "height":str(height),
+                            "format":"image/png",
+                            "transparent":"true",
+                            "info_format":"text/plain",
+                            "x":str(px),
+                            "y":str(py),
+                            "feature_count":"50"
+                        }
+                        url=base+"?"+urlencode(params)
+                        try:
+                            req=Request(url,headers={"User-Agent":"Mozilla/5.0"})
+                            with urlopen(req,timeout=20) as r:
+                                txt=r.read().decode("utf-8",errors="ignore")
+                            low=txt.lower()
+                            matched=[k for k in keywords if k in low]
+                            if matched:
+                                hits.append({
+                                    "distance_from_coast_m":dist,
+                                    "pixel":[px,py],
+                                    "matched_keywords":matched,
+                                    "preview":txt[:4000]
+                                })
+                            elif len(raw_samples)<4 and txt.strip():
+                                raw_samples.append({
+                                    "distance_from_coast_m":dist,
+                                    "preview":txt[:1200]
+                                })
+                        except Exception as e:
+                            if len(raw_samples)<4:
+                                raw_samples.append({
+                                    "distance_from_coast_m":dist,
+                                    "error":str(e)
+                                })
+
+                    results.append({
+                        "style":style,
+                        "label":label,
+                        "hits":hits,
+                        "nondepth_samples":raw_samples
+                    })
+
+                return self.send_json({
+                    "place":"Jūrkalne",
+                    "bbox_3857":bbox,
+                    "scan":"40–340 m west of coast, step 20 m",
+                    "results":results
+                })
+            except Exception as e:
+                return self.send_json({"error":"LJA WMS dziļuma skenēšana neizdevās","detail":str(e)},502)
+
         if u.path == "/api/weather":
             q = parse_qs(u.query)
             key = q.get("place", ["Jurkalne"])[0]
