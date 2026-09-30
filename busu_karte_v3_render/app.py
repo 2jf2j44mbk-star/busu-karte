@@ -56,6 +56,28 @@ class Handler(SimpleHTTPRequestHandler):
         if u.path == "/health":
             return self.send_json({"ok": True, "version":"3.1"})
 
+
+        if u.path == "/api/dzilumi-resource":
+            try:
+                pkg = get_json("https://data.gov.lv/dati/api/3/action/package_show?id=dziumi-wfs")
+                result = pkg.get("result", {})
+                resources = []
+                for r in result.get("resources", []):
+                    resources.append({
+                        "name": r.get("name"),
+                        "format": r.get("format"),
+                        "url": r.get("url"),
+                        "resource_type": r.get("resource_type"),
+                        "description": r.get("description")
+                    })
+                return self.send_json({
+                    "title": result.get("title"),
+                    "license_title": result.get("license_title"),
+                    "resources": resources
+                })
+            except Exception as e:
+                return self.send_json({"error":"Neizdevās nolasīt Dziļumi WFS CKAN metadatus","detail":str(e)},502)
+
         if u.path == "/api/weather":
             q = parse_qs(u.query)
             key = q.get("place", ["Jurkalne"])[0]
