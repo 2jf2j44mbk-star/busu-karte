@@ -1095,6 +1095,80 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json({"error":"Neizdevās analizēt inline WMS skriptus","detail":str(e)},502)
 
+
+        if u.path == "/api/lja-wms-featureinfo":
+            try:
+                import math
+                p = PLACES["Jurkalne"]
+
+                # Web Mercator helpers
+                R=6378137.0
+                def merc(lon,lat):
+                    x=R*math.radians(lon)
+                    y=R*math.log(math.tan(math.pi/4+math.radians(lat)/2))
+                    return x,y
+
+                cx,cy=merc(p["coast_lon"],p["coast_lat"])
+                half=5000
+                bbox=f"{cx-half},{cy-half},{cx+half},{cy+half}"
+
+                base="https://notice.lja.lv/wms_proxy.php"
+                tests=[]
+                for style in ["style-id-263","style-id-3135"]:
+                    common={
+                        "service":"WMS",
+                        "version":"1.1.1",
+                        "request":"GetMap",
+                        "layers":"cells",
+                        "styles":style,
+                        "srs":"EPSG:3857",
+                        "bbox":bbox,
+                        "width":"800",
+                        "height":"800",
+                        "format":"image/png",
+                        "transparent":"true"
+                    }
+                    map_url=base+"?"+urlencode(common)
+                    item={"style":style,"map_url":map_url}
+                    try:
+                        req=Request(map_url,headers={"User-Agent":"Mozilla/5.0"})
+                        with urlopen(req,timeout=30) as r:
+                            raw=r.read()
+                            item["map_status"]=getattr(r,"status",200)
+                            item["map_content_type"]=r.headers.get("Content-Type")
+                            item["map_bytes"]=len(raw)
+                    except Exception as e:
+                        item["map_error"]=str(e)
+
+                    fi=common.copy()
+                    fi.update({
+                        "request":"GetFeatureInfo",
+                        "query_layers":"cells",
+                        "info_format":"text/plain",
+                        "x":"400","y":"400",
+                        "feature_count":"20"
+                    })
+                    fi_url=base+"?"+urlencode(fi)
+                    item["featureinfo_url"]=fi_url
+                    try:
+                        req=Request(fi_url,headers={"User-Agent":"Mozilla/5.0"})
+                        with urlopen(req,timeout=30) as r:
+                            txt=r.read().decode("utf-8",errors="ignore")
+                            item["featureinfo_status"]=getattr(r,"status",200)
+                            item["featureinfo_content_type"]=r.headers.get("Content-Type")
+                            item["featureinfo_preview"]=txt[:5000]
+                    except Exception as e:
+                        item["featureinfo_error"]=str(e)
+                    tests.append(item)
+
+                return self.send_json({
+                    "place":"Jūrkalne",
+                    "bbox_3857":bbox,
+                    "tests":tests
+                })
+            except Exception as e:
+                return self.send_json({"error":"LJA WMS FeatureInfo tests neizdevās","detail":str(e)},502)
+
         if u.path == "/api/weather":
             q = parse_qs(u.query)
             key = q.get("place", ["Jurkalne"])[0]
