@@ -263,6 +263,55 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json({"error":"Neizdevās pārbaudīt VRAA WFS","detail":str(e)},502)
 
+
+        if u.path == "/api/vraa-depth-samples":
+            try:
+                layers = [
+                    "vraa:msp_dziluma_apgabali",
+                    "vraa:msp_dzilumatizmes",
+                    "vraa:zm_dzilrakumi_103"
+                ]
+                bbox = "21.30,56.95,21.48,57.08,EPSG:4326"
+                out = []
+                for layer in layers:
+                    item = {"layer":layer}
+                    try:
+                        desc_url = "https://geolatvija.lv/geoserver/vraa/wfs?" + urlencode({
+                            "service":"WFS",
+                            "version":"2.0.0",
+                            "request":"DescribeFeatureType",
+                            "typeNames":layer
+                        })
+                        req = Request(desc_url, headers={"User-Agent":"Mozilla/5.0"})
+                        with urlopen(req, timeout=30) as r:
+                            desc = r.read().decode("utf-8", errors="ignore")
+                        item["describe_preview"] = desc[:4000]
+                    except Exception as e:
+                        item["describe_error"] = str(e)
+
+                    try:
+                        feat_url = "https://geolatvija.lv/geoserver/vraa/wfs?" + urlencode({
+                            "service":"WFS",
+                            "version":"2.0.0",
+                            "request":"GetFeature",
+                            "typeNames":layer,
+                            "bbox":bbox,
+                            "count":"10",
+                            "outputFormat":"application/json"
+                        })
+                        req = Request(feat_url, headers={"User-Agent":"Mozilla/5.0"})
+                        with urlopen(req, timeout=30) as r:
+                            data = json.loads(r.read().decode("utf-8"))
+                        item["numberReturned"] = data.get("numberReturned")
+                        item["features"] = data.get("features", [])[:10]
+                    except Exception as e:
+                        item["feature_error"] = str(e)
+
+                    out.append(item)
+                return self.send_json({"bbox":bbox,"layers":out})
+            except Exception as e:
+                return self.send_json({"error":"Neizdevās iegūt Latvijas dziļumu slāņu paraugus","detail":str(e)},502)
+
         if u.path == "/api/weather":
             q = parse_qs(u.query)
             key = q.get("place", ["Jurkalne"])[0]
