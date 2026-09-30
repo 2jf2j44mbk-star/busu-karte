@@ -654,6 +654,73 @@ class Handler(SimpleHTTPRequestHandler):
                 "samples":samples
             })
 
+
+        if u.path == "/api/lja-shp-probe":
+            try:
+                import io, zipfile, struct
+
+                zip_url = "https://data.gov.lv/dati/lv/dataset/ecf2e9f0-01a5-43e1-a143-0a7d6d7a6ab5/resource/c3686a42-9b9c-41f1-8288-dbaed9e28190/download/ajd_2026.zip"
+                req = Request(zip_url, headers={"User-Agent":"Mozilla/5.0"})
+                with urlopen(req, timeout=60) as r:
+                    raw = r.read()
+
+                zf = zipfile.ZipFile(io.BytesIO(raw))
+                names = zf.namelist()
+                wanted = [n for n in names if any(k in n.lower() for k in [
+                    "dzil", "dziļ", "isolin", "izolin", "sound", "depth"
+                ])]
+
+                def parse_dbf(name):
+                    data = zf.read(name)
+                    if len(data) < 32:
+                        return {"error":"too short"}
+                    num_records = int.from_bytes(data[4:8], "little")
+                    header_len = int.from_bytes(data[8:10], "little")
+                    record_len = int.from_bytes(data[10:12], "little")
+                    fields = []
+                    pos = 32
+                    while pos + 32 <= header_len:
+                        if data[pos] == 0x0D:
+                            break
+                        desc = data[pos:pos+32]
+                        fname = desc[:11].split(b"\\x00",1)[0].decode("latin1", errors="ignore")
+                        ftype = chr(desc[11])
+                        flen = desc[16]
+                        fdec = desc[17]
+                        fields.append({"name":fname,"type":ftype,"length":flen,"decimals":fdec})
+                        pos += 32
+
+                    samples=[]
+                    rec_start=header_len
+                    for i in range(min(num_records,5)):
+                        rec=data[rec_start+i*record_len:rec_start+(i+1)*record_len]
+                        if not rec or rec[0:1] == b"*":
+                            continue
+                        off=1
+                        row={}
+                        for f in fields:
+                            b=rec[off:off+f["length"]]
+                            off += f["length"]
+                            row[f["name"]] = b.decode("latin1", errors="ignore").strip()
+                        samples.append(row)
+                    return {"num_records":num_records,"fields":fields,"samples":samples}
+
+                dbf_info={}
+                for n in wanted:
+                    if n.lower().endswith(".dbf"):
+                        try:
+                            dbf_info[n]=parse_dbf(n)
+                        except Exception as e:
+                            dbf_info[n]={"error":str(e)}
+
+                return self.send_json({
+                    "zip_bytes": len(raw),
+                    "matching_files": wanted,
+                    "dbf": dbf_info
+                })
+            except Exception as e:
+                return self.send_json({"error":"Neizdevās nolasīt LJA SHP ZIP","detail":str(e)},502)
+
         if u.path == "/api/weather":
             q = parse_qs(u.query)
             key = q.get("place", ["Jurkalne"])[0]
