@@ -579,40 +579,84 @@ class Handler(SimpleHTTPRequestHandler):
             if not p:
                 return self.send_json({"error":"Nezināma vieta"},404)
 
+            def point_in_ring(x, y, ring):
+                inside = False
+                if not ring or len(ring) < 3:
+                    return False
+                j = len(ring) - 1
+                for i in range(len(ring)):
+                    xi, yi = ring[i][0], ring[i][1]
+                    xj, yj = ring[j][0], ring[j][1]
+                    if ((yi > y) != (yj > y)):
+                        xinters = (xj - xi) * (y - yi) / ((yj - yi) or 1e-12) + xi
+                        if x < xinters:
+                            inside = not inside
+                    j = i
+                return inside
+
+            def point_in_geom(x, y, geom):
+                if not geom:
+                    return False
+                gtype = geom.get("type")
+                coords = geom.get("coordinates") or []
+                polys = coords if gtype == "MultiPolygon" else [coords] if gtype == "Polygon" else []
+                for poly in polys:
+                    if not poly:
+                        continue
+                    if point_in_ring(x, y, poly[0]):
+                        in_hole = any(point_in_ring(x, y, hole) for hole in poly[1:])
+                        if not in_hole:
+                            return True
+                return False
+
+            try:
+                url = "https://geolatvija.lv/geoserver/vraa/wfs?" + urlencode({
+                    "service":"WFS","version":"2.0.0","request":"GetFeature",
+                    "typeNames":"vraa:msp_dziluma_apgabali",
+                    "count":"20",
+                    "outputFormat":"application/json",
+                    "srsName":"EPSG:3059"
+                })
+                req = Request(url, headers={"User-Agent":"Mozilla/5.0"})
+                with urlopen(req, timeout=30) as r:
+                    data = json.loads(r.read().decode("utf-8"))
+                features = data.get("features", [])
+            except Exception as e:
+                return self.send_json({"error":"Latvijas dziļuma joslas nav pieejamas","detail":str(e)},502)
+
             samples=[]
             for d in range(0,201,25):
-                # testa sākums ~40 m jūrā; šajā īsajā posmā pietiek ar lokālu EPSG:3059 X nobīdi uz rietumiem
                 x = p["x"] - (40 + d)
                 y = p["y"]
-                eps = 2.0
-                bbox = f"{x-eps},{y-eps},{x+eps},{y+eps},EPSG:3059"
-                try:
-                    url = "https://geolatvija.lv/geoserver/vraa/wfs?" + urlencode({
-                        "service":"WFS","version":"2.0.0","request":"GetFeature",
-                        "typeNames":"vraa:msp_dziluma_apgabali",
-                        "bbox":bbox,
-                        "count":"5",
-                        "outputFormat":"application/json",
-                        "srsName":"EPSG:3059"
-                    })
-                    req = Request(url, headers={"User-Agent":"Mozilla/5.0"})
-                    with urlopen(req, timeout=20) as r:
-                        data = json.loads(r.read().decode("utf-8"))
-                    zones=[]
-                    for ft in data.get("features",[]):
-                        pr=ft.get("properties",{})
+                zones=[]
+                for ft in features:
+                    if point_in_geom(x, y, ft.get("geometry")):
+                        pr = ft.get("properties", {})
+                        to_val = pr.get("dzil1_lidz")
+                        if to_val is None:
+                            to_val = pr.get("dzil_lidz")
+                        if to_val is None:
+                            for k,v in pr.items():
+                                if "lidz" in k.lower() and v is not None:
+                                    to_val = v
+                                    break
                         zones.append({
                             "from":pr.get("dzilums_no"),
-                            "to":pr.get("dzil1_lidz"),
+                            "to":to_val,
                             "id":ft.get("id")
                         })
-                    samples.append({"distance_m":d,"approx_from_coast_m":40+d,"zones":zones})
-                except Exception as e:
-                    samples.append({"distance_m":d,"approx_from_coast_m":40+d,"zones":[],"error":str(e)})
+                samples.append({
+                    "distance_m":d,
+                    "approx_from_coast_m":40+d,
+                    "zones":zones,
+                    "x3059":round(x,2),
+                    "y3059":round(y,2)
+                })
 
             return self.send_json({
                 "place":key,
                 "source":"GeoLatvija VRAA WFS vraa:msp_dziluma_apgabali",
+                "method":"local point-in-polygon EPSG:3059",
                 "samples":samples
             })
 
