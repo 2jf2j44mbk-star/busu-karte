@@ -56,12 +56,20 @@ async function loadAll(){
    if(pr.ok && p.coast_segments){
      const head=p.enc_coast_offset_m==null
        ? '<div class="status warn">ENC krasta sākums nav atrasts.</div>'
-       : '<div class="status ok">✓ ENC krasta sākums noteikts aptuveni '+p.enc_coast_offset_m+' m uz rietumiem no sākotnējā atskaites punkta.</div>';
+       : '<div class="status ok">✓ Pirmā PRIMAR dziļuma zona sākas aptuveni '+p.enc_coast_offset_m+' m uz rietumiem no mūsu krasta atskaites punkta.</div>';
      pe.innerHTML=head+p.coast_segments.map(s=>{
        const a=s.from_enc_coast_m, b=s.to_enc_coast_m;
        const ranges=(s.depth_ranges_m||[]).map(r=>(r[0]??"?")+"–"+(r[1]??"?")+" m").join(", ");
-       return '<div class="profile-row"><span>'+a+'–'+b+' m no ENC krasta</span><b>'+ranges+'</b></div>';
-     }).join("")+'<p class="muted">PRIMAR S‑57 rāda dziļuma zonas, nevis precīzu dziļumu katrā metrā.</p>';
+       const fromOriginal=(p.enc_coast_offset_m==null?null:p.enc_coast_offset_m+a);
+       const toOriginal=(p.enc_coast_offset_m==null?null:p.enc_coast_offset_m+b);
+       let label;
+       if(a===b){
+         label='Pāreja ap '+fromOriginal+' m no krasta atskaites punkta';
+       }else{
+         label=fromOriginal+'–'+toOriginal+' m no krasta atskaites punkta';
+       }
+       return '<div class="profile-row"><span>'+label+'</span><b>'+ranges+'</b></div>';
+     }).join("")+'<p class="muted">PRIMAR S‑57 rāda dziļuma zonas, nevis precīzu dziļumu katrā metrā. Attālumi ir no mūsu aptuvenā Jūrkalnes krasta atskaites punkta.</p>';
    }else{
      pe.textContent="PRIMAR dziļuma zonas nav pieejamas.";
    }
