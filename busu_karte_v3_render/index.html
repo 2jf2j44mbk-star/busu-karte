@@ -2,25 +2,23 @@
 <html lang="lv">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Bušu Karte V3</title>
+<title>Bušu Karte V3.1</title>
 <style>
-:root{--bg:#061018;--card:#0e202b;--card2:#142d39;--txt:#eef8fb;--mut:#9db2bd;--green:#2bd0aa;--blue:#42aaff;--gold:#f3bc54;--line:#28434f}
+:root{--card:#0e202b;--card2:#142d39;--txt:#eef8fb;--mut:#9db2bd;--green:#2bd0aa;--blue:#42aaff;--gold:#f3bc54;--line:#28434f}
 *{box-sizing:border-box}body{margin:0;background:linear-gradient(#051018,#0a1c25);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial;color:var(--txt)}
 main{max-width:520px;margin:auto;padding:16px 16px 80px}.top{display:flex;justify-content:space-between;align-items:center}.brand{font-size:23px;font-weight:900}.tag{background:var(--green);color:#052219;border-radius:999px;padding:7px 10px;font-weight:900;font-size:12px}
 .card{margin:13px 0;padding:16px;border-radius:18px;background:var(--card);border:1px solid #193844}.title{font-size:13px;font-weight:900;text-transform:uppercase;letter-spacing:.7px;color:#cee0e7;margin-bottom:10px}
-select,button{width:100%;border:0;border-radius:13px;padding:13px;font-size:15px}select{background:var(--card2);color:var(--txt)}button{background:var(--green);font-weight:900;color:#062219;margin-top:10px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.m{background:var(--card2);border-radius:13px;padding:12px}.m span{display:block;color:var(--mut);font-size:12px}.m b{display:block;font-size:19px;margin-top:5px}
-#chart{width:100%;height:230px;background:#09202b;border-radius:14px;border:1px solid #193d4b}.muted{color:var(--mut);font-size:12px;line-height:1.45}.status{padding:10px 12px;border-radius:12px;background:#102a34;margin-top:10px}.ok{color:#75ead0}.warn{color:#ffd482}.profile-row{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}.profile-row:last-child{border-bottom:0}
+select,button{width:100%;border:0;border-radius:13px;padding:13px;font-size:15px}select{background:var(--card2);color:var(--txt)}button{background:var(--green);font-weight:900;color:#062219;margin-top:10px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.m{background:var(--card2);border-radius:13px;padding:12px}.m span{display:block;color:var(--mut);font-size:12px}.m b{display:block;font-size:19px;margin-top:5px}
+#chart{width:100%;height:240px;background:#09202b;border-radius:14px;border:1px solid #193d4b}.muted{color:var(--mut);font-size:12px;line-height:1.45}.status{padding:10px 12px;border-radius:12px;background:#102a34;margin-top:10px}.ok{color:#75ead0}.warn{color:#ffd482}
+.profile-row{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}.profile-row:last-child{border-bottom:0}.legend{display:flex;justify-content:space-between;color:var(--mut);font-size:11px;margin-top:6px}
 </style>
 </head>
 <body><main>
-<div class="top"><div class="brand">🎣 BUŠU KARTE</div><div class="tag">V3 · SERVERIS</div></div>
-
+<div class="top"><div class="brand">🎣 BUŠU KARTE</div><div class="tag">V3.1</div></div>
 <div class="card">
 <div class="title">Testa vieta</div>
-<select id="place">
-<option value="Jurkalne">Jūrkalne</option><option value="Uzava">Užava</option>
-<option value="Pavilosta">Pāvilosta</option><option value="Ventspils">Ventspils</option>
-</select>
+<select id="place"><option value="Jurkalne">Jūrkalne</option><option value="Uzava">Užava</option><option value="Pavilosta">Pāvilosta</option><option value="Ventspils">Ventspils</option></select>
 <button onclick="loadAll()">Ielādēt reālos datus</button>
 <div id="status" class="status muted">Gatavs testam.</div>
 </div>
@@ -33,25 +31,19 @@ select,button{width:100%;border:0;border-radius:13px;padding:13px;font-size:15px
 </div>
 
 <div class="card">
-<div class="title">EMODnet · 0–200 m zemūdens profils</div>
-<svg id="chart" viewBox="0 0 480 230" preserveAspectRatio="none"></svg>
-<p class="muted">Profils tiek prasīts no EMODnet <code>/depth_profile</code>. Pirmais punkts ir testa piekrastes koordināta; 200 m līnija virzās aptuveni uz rietumiem jūrā. Pirms publiskas versijas krasta punktus precizēsim.</p>
+<div class="title">EMODnet · 9 dziļuma punkti · 0–200 m</div>
+<svg id="chart" viewBox="0 0 480 240" preserveAspectRatio="none"></svg>
+<div class="legend"><span>0 m</span><span>50</span><span>100</span><span>150</span><span>200 m</span></div>
+<p class="muted">“0 m” šajā testa grafikā sākas aptuveni 40 m no krasta jūrā, lai nepaņemtu stāvkrasta sauszemes šūnu. Punkti tiek prasīti ik pēc 25 m.</p>
 <div id="samples"></div>
-</div>
-
-<div class="card">
-<div class="title">Kāpēc šī versija ir citāda?</div>
-<p class="muted">Telefona HTML vairs nesazinās tieši ar ārējiem API. Vietējais Python serveris paņem Open‑Meteo un EMODnet datus un pārsūta tos aplikācijai. Tas ir tas pats princips, ko vēlāk izmantosim īstajā hostētajā versijā.</p>
 </div>
 </main>
 <script>
-function compass(d){if(d==null)return "—";const a=["Z","ZA","A","DA","D","DR","R","ZR"];return a[Math.round(d/45)%8]+" "+Math.round(d)+"°"}
 function num(v,u){return v==null?"nav datu":Number(v).toFixed(1)+" "+u}
 async function loadAll(){
- const key=document.getElementById("place").value,s=document.getElementById("status");
- s.className="status muted";s.textContent="Ielādēju prognozi un EMODnet profilu…";
+ const key=place.value; status.className="status muted"; status.textContent="Ielādēju…";
  try{
-   const [wr,dr]=await Promise.all([fetch("/api/weather?place="+key),fetch("/api/depth?place="+key+"&distance=200")]);
+   const [wr,dr]=await Promise.all([fetch("/api/weather?place="+key),fetch("/api/depth?place="+key)]);
    const w=await wr.json(),d=await dr.json();
    if(!wr.ok) throw new Error(w.error||"Prognožu kļūda");
    if(!dr.ok) throw new Error(d.error||"Dziļumu kļūda");
@@ -59,27 +51,24 @@ async function loadAll(){
    wind.textContent=num(wc.wind_speed_10m,"m/s"); wave.textContent=num(mc.wave_height,"m");
    period.textContent=num(mc.wave_period,"s"); sst.textContent=num(mc.sea_surface_temperature,"°C");
    draw(d.profile); showSamples(d.profile);
-   s.className="status ok";s.textContent="✓ Reālie dati ielādēti: Open‑Meteo + EMODnet";
- }catch(e){s.className="status warn";s.textContent="⚠ "+e.message}
+   status.className="status ok"; status.textContent="✓ Open‑Meteo + EMODnet punkti ielādēti";
+ }catch(e){status.className="status warn"; status.textContent="⚠ "+e.message}
 }
 function draw(p){
  const svg=document.getElementById("chart");svg.innerHTML="";
- const good=p.filter(x=>x.depth_m!=null && isFinite(Number(x.depth_m))); if(!good.length)return;
- const W=480,H=230,pad=28,maxD=Math.max(...good.map(x=>Number(x.depth_m)),1),maxX=Math.max(...good.map(x=>x.distance_m),1);
- let pts=good.map(x=>[(pad+(W-2*pad)*x.distance_m/maxX),(pad+(H-2*pad)*Number(x.depth_m)/maxD)]);
+ const good=p.filter(x=>x.depth_m!=null && isFinite(Number(x.depth_m)));
+ if(!good.length){svg.innerHTML='<text x="25" y="35" fill="#ffd482">Nav derīgu dziļuma punktu</text>';return}
+ const W=480,H=240,L=42,R=18,T=24,B=34;
+ const maxD=Math.max(...good.map(x=>Number(x.depth_m)),1), niceMax=Math.ceil(maxD);
+ let grid="";
+ for(let i=0;i<=4;i++){const y=T+(H-T-B)*i/4;const dep=(niceMax*i/4).toFixed(1);grid+=`<line x1="${L}" y1="${y}" x2="${W-R}" y2="${y}" stroke="#21424f"/><text x="4" y="${y+4}" fill="#8fa9b5" font-size="10">${dep} m</text>`}
+ let pts=good.map(x=>{const X=L+(W-L-R)*(Number(x.distance_m)/200);const Y=T+(H-T-B)*(Number(x.depth_m)/niceMax);return [X,Y,x]});
  let path="M"+pts.map(q=>q[0].toFixed(1)+","+q[1].toFixed(1)).join(" L");
- svg.innerHTML=`<line x1="${pad}" y1="${pad}" x2="${pad}" y2="${H-pad}" stroke="#315463"/>
- <line x1="${pad}" y1="${H-pad}" x2="${W-pad}" y2="${H-pad}" stroke="#315463"/>
- <path d="${path}" fill="none" stroke="#42aaff" stroke-width="3"/>
- <text x="${pad}" y="18" fill="#9db2bd" font-size="11">0 m</text>
- <text x="${W-pad-35}" y="${H-7}" fill="#9db2bd" font-size="11">200 m</text>
- <text x="${pad+5}" y="${H-35}" fill="#9db2bd" font-size="11">dziļums ↓</text>`;
+ let circles=pts.map(q=>`<circle cx="${q[0]}" cy="${q[1]}" r="4" fill="#2bd0aa"/><text x="${q[0]+5}" y="${q[1]-6}" fill="#cceaf0" font-size="9">${Number(q[2].depth_m).toFixed(1)}</text>`).join("");
+ svg.innerHTML=grid+`<path d="${path}" fill="none" stroke="#42aaff" stroke-width="3"/>`+circles;
 }
 function showSamples(p){
- const el=document.getElementById("samples");el.innerHTML="";
- if(!p.length){el.innerHTML='<p class="muted">Nav profila punktu.</p>';return}
- const picks=[0,Math.floor((p.length-1)*.25),Math.floor((p.length-1)*.5),Math.floor((p.length-1)*.75),p.length-1];
- [...new Set(picks)].forEach(i=>{const x=p[i],r=document.createElement("div");r.className="profile-row";
- r.innerHTML=`<span>${x.distance_m} m no sākumpunkta</span><b>${x.depth_m==null?"—":Number(x.depth_m).toFixed(1)+" m"}</b>`;el.appendChild(r)})
+ samples.innerHTML="";
+ p.forEach(x=>{const r=document.createElement("div");r.className="profile-row";r.innerHTML=`<span>${x.distance_m} m grafikā<br><small style="color:#9db2bd">~${x.approx_from_coast_m} m no krasta</small></span><b>${x.depth_m==null?"—":Number(x.depth_m).toFixed(1)+" m"}</b>`;samples.appendChild(r)})
 }
 </script></body></html>
