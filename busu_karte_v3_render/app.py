@@ -801,6 +801,84 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json({"error":"Neizdevās nolasīt LJA SOUNDG ģeometriju","detail":str(e)},502)
 
+
+        if u.path == "/api/lja-jurkalne-nearest":
+            try:
+                import io, zipfile, struct, math
+
+                zip_url = "https://data.gov.lv/dati/lv/dataset/ecf2e9f0-01a5-43e1-a143-0a7d6d7a6ab5/resource/c3686a42-9b9c-41f1-8288-dbaed9e28190/download/ajd_2026.zip"
+                req = Request(zip_url, headers={"User-Agent":"Mozilla/5.0"})
+                with urlopen(req, timeout=60) as r:
+                    raw = r.read()
+
+                zf = zipfile.ZipFile(io.BytesIO(raw))
+                shp_name = next((n for n in zf.namelist() if n.lower().endswith("soundg(pz).shp")), None)
+                if not shp_name:
+                    return self.send_json({"error":"SOUNDG(PZ).shp nav atrasts"},404)
+
+                shp = zf.read(shp_name)
+
+                # WGS84 World Mercator / Mercator variant A (ellipsoidal), matching the PRJ.
+                a_ell = 6378137.0
+                e = 0.08181919084262149
+                def lonlat_to_world_mercator(lon, lat):
+                    x = a_ell * math.radians(lon)
+                    phi = math.radians(lat)
+                    sinp = math.sin(phi)
+                    y = a_ell * math.log(
+                        math.tan(math.pi/4 + phi/2) *
+                        ((1 - e*sinp)/(1 + e*sinp))**(e/2)
+                    )
+                    return x,y
+
+                p = PLACES["Jurkalne"]
+                coast_x, coast_y = lonlat_to_world_mercator(p["coast_lon"], p["coast_lat"])
+
+                pts=[]
+                pos=100
+                while pos+8 <= len(shp):
+                    rec_no, content_words = struct.unpack(">2i", shp[pos:pos+8])
+                    content_len = content_words * 2
+                    content = shp[pos+8:pos+8+content_len]
+                    pos += 8 + content_len
+                    if len(content) < 28:
+                        continue
+                    st = struct.unpack("<i", content[:4])[0]
+                    if st != 11:
+                        continue
+                    x,y,z = struct.unpack("<3d", content[4:28])
+                    m = None
+                    if len(content) >= 36:
+                        try:
+                            m = struct.unpack("<d", content[28:36])[0]
+                        except Exception:
+                            pass
+                    dx=x-coast_x; dy=y-coast_y
+                    dist=math.hypot(dx,dy)
+                    pts.append({
+                        "record":rec_no,
+                        "x":x,"y":y,"z":z,"m":m,
+                        "distance_from_coast_m":dist,
+                        "west_of_coast_m":coast_x-x,
+                        "north_offset_m":y-coast_y
+                    })
+
+                pts.sort(key=lambda r:r["distance_from_coast_m"])
+                nearby=[r for r in pts if r["distance_from_coast_m"] <= 5000][:100]
+
+                return self.send_json({
+                    "place":"Jūrkalne",
+                    "coast_lon":p["coast_lon"],
+                    "coast_lat":p["coast_lat"],
+                    "coast_world_mercator":[coast_x,coast_y],
+                    "total_soundings":len(pts),
+                    "nearest_20":pts[:20],
+                    "within_5km_count":len([r for r in pts if r["distance_from_coast_m"] <= 5000]),
+                    "within_5km_first_100":nearby
+                })
+            except Exception as e:
+                return self.send_json({"error":"Neizdevās atrast Jūrkalnei tuvākās LJA dziļumatzīmes","detail":str(e)},502)
+
         if u.path == "/api/weather":
             q = parse_qs(u.query)
             key = q.get("place", ["Jurkalne"])[0]
