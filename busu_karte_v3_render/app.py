@@ -186,6 +186,44 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json({"error":"Neizdevās pārbaudīt GeoLatvija WFS","detail":str(e)},502)
 
+
+        if u.path == "/api/geolatvija-routes":
+            try:
+                import re
+                target = "https://geolatvija.lv/static/js/main.db9060ea.js"
+                req = Request(target, headers={"User-Agent":"Mozilla/5.0"})
+                with urlopen(req, timeout=30) as r:
+                    js = r.read().decode("utf-8", errors="ignore")
+
+                terms = ["geoProductId","geoProduct","downloadService","download","WFS","GetCapabilities","serviceUrl","infoMapAccessService"]
+                snippets = {}
+                for term in terms:
+                    arr = []
+                    start = 0
+                    while True:
+                        i = js.find(term, start)
+                        if i < 0:
+                            break
+                        arr.append(js[max(0,i-350):min(len(js),i+700)])
+                        start = i + len(term)
+                        if len(arr) >= 20:
+                            break
+                    snippets[term] = arr
+
+                api_paths = []
+                for m in re.findall(r'["\\\'](/[^"\\\']{2,180})["\\\']', js):
+                    low = m.lower()
+                    if any(k in low for k in ["geoproduct","download","service","metadata","wfs","ows"]):
+                        if m not in api_paths:
+                            api_paths.append(m)
+
+                return self.send_json({
+                    "api_paths": api_paths[:300],
+                    "snippets": snippets
+                })
+            except Exception as e:
+                return self.send_json({"error":"Neizdevās analizēt GeoLatvija route","detail":str(e)},502)
+
         if u.path == "/api/weather":
             q = parse_qs(u.query)
             key = q.get("place", ["Jurkalne"])[0]
