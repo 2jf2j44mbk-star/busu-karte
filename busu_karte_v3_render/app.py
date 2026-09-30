@@ -1051,6 +1051,50 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json({"error":"Neizdevās izvilkt PRIMAR WMS konfigurāciju","detail":str(e)},502)
 
+
+        if u.path == "/api/lja-inline-wms":
+            try:
+                import re
+                base = "https://notice.lja.lv/"
+                req = Request(base, headers={"User-Agent":"Mozilla/5.0"})
+                with urlopen(req, timeout=30) as r:
+                    html = r.read().decode("utf-8", errors="ignore")
+
+                inline = re.findall(r'<script(?![^>]+src=)[^>]*>(.*?)</script>', html, re.I | re.S)
+                combined = "\n\n".join(inline)
+
+                terms = ["toggleS57Layer","toggleS100Layer","toggleENCLayer","PRIMAR","wms","tileLayer.wms","L.tileLayer.wms","GetMap","GetCapabilities"]
+                snippets={}
+                low=combined.lower()
+                for term in terms:
+                    t=term.lower()
+                    arr=[]
+                    start=0
+                    while True:
+                        i=low.find(t,start)
+                        if i<0: break
+                        arr.append(combined[max(0,i-800):min(len(combined),i+2500)])
+                        start=i+len(t)
+                        if len(arr)>=20: break
+                    if arr:
+                        snippets[term]=arr
+
+                urls=[]
+                for m in re.findall(r'https?://[^"\\\'\\s)]+', combined):
+                    ml=m.lower()
+                    if any(k in ml for k in ["wms","primar","enc","s57","s100","map"]):
+                        if m not in urls:
+                            urls.append(m)
+
+                return self.send_json({
+                    "inline_script_count":len(inline),
+                    "combined_length":len(combined),
+                    "urls":urls[:100],
+                    "snippets":snippets
+                })
+            except Exception as e:
+                return self.send_json({"error":"Neizdevās analizēt inline WMS skriptus","detail":str(e)},502)
+
         if u.path == "/api/weather":
             q = parse_qs(u.query)
             key = q.get("place", ["Jurkalne"])[0]
