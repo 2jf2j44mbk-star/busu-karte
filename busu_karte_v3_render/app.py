@@ -569,13 +569,7 @@ class Handler(SimpleHTTPRequestHandler):
         if u.path == "/api/lv-depth-zones":
             q = parse_qs(u.query)
             key = q.get("place", ["Jurkalne"])[0]
-            native_points = {
-                "Jurkalne": {"x":340971.9825,"y":321041.2680},
-                "Uzava": {"x":344009.4661,"y":347837.8548},
-                "Pavilosta": {"x":328270.9483,"y":308988.7899},
-                "Ventspils": {"x":351306.2561,"y":363364.6870}
-            }
-            p = native_points.get(key)
+            p = PLACES.get(key)
             if not p:
                 return self.send_json({"error":"Nezināma vieta"},404)
 
@@ -615,7 +609,7 @@ class Handler(SimpleHTTPRequestHandler):
                     "typeNames":"vraa:msp_dziluma_apgabali",
                     "count":"20",
                     "outputFormat":"application/json",
-                    "srsName":"EPSG:3059"
+                    "srsName":"EPSG:4326"
                 })
                 req = Request(url, headers={"User-Agent":"Mozilla/5.0"})
                 with urlopen(req, timeout=30) as r:
@@ -626,11 +620,11 @@ class Handler(SimpleHTTPRequestHandler):
 
             samples=[]
             for d in range(0,201,25):
-                x = p["x"] - (40 + d)
-                y = p["y"]
+                total = p["sea_offset_m"] + d
+                lat, lon = west_point(p["coast_lat"], p["coast_lon"], total)
                 zones=[]
                 for ft in features:
-                    if point_in_geom(x, y, ft.get("geometry")):
+                    if point_in_geom(lon, lat, ft.get("geometry")):
                         pr = ft.get("properties", {})
                         to_val = pr.get("dzil1_lidz")
                         if to_val is None:
@@ -647,16 +641,16 @@ class Handler(SimpleHTTPRequestHandler):
                         })
                 samples.append({
                     "distance_m":d,
-                    "approx_from_coast_m":40+d,
+                    "approx_from_coast_m":total,
                     "zones":zones,
-                    "x3059":round(x,2),
-                    "y3059":round(y,2)
+                    "lat":lat,
+                    "lon":lon
                 })
 
             return self.send_json({
                 "place":key,
                 "source":"GeoLatvija VRAA WFS vraa:msp_dziluma_apgabali",
-                "method":"local point-in-polygon EPSG:3059",
+                "method":"local point-in-polygon EPSG:4326",
                 "samples":samples
             })
 
